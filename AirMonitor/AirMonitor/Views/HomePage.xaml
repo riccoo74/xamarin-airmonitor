@@ -2,11 +2,28 @@
 <ContentPage xmlns="http://xamarin.com/schemas/2014/forms"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="AirMonitor.Views.HomePage"
+             xmlns:models="clr-namespace:AirMonitor.Models"
              Title="Home Page">
-    <Button
-        Text="Go to details"
-        HorizontalOptions="Center"
-        VerticalOptions="Center"
-        Command="{Binding GoToDetailsCommand}"
-        />
+    <Grid>
+        <ListView ItemsSource="{Binding Items}" ItemTapped="ListView_ItemTapped" SelectionMode="None">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <ViewCell>
+                        <StackLayout Orientation="Horizontal" HorizontalOptions="Center">
+                            <Label Style="{StaticResource TextCenterStyle}">
+                                <Label.FormattedText>
+                                    <FormattedString>
+                                        <Span Text="{Binding Installation.Address.Description}" Style="{StaticResource NormalTextSpanStyle}" />
+                                        <Span Text="&#x0a;" />
+                                        <Span Text="{Binding CurrentDisplayValue, StringFormat='Wartość: {0}'}" Style="{StaticResource SmallTextSpanStyle}" />
+                                    </FormattedString>
+                                </Label.FormattedText>
+                            </Label>
+                        </StackLayout>
+                    </ViewCell>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+        <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" HorizontalOptions="Center" VerticalOptions="Center"/>
+    </Grid>
 </ContentPage>

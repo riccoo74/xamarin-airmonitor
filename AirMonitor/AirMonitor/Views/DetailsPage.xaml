@@ -16,6 +16,7 @@
     <ContentPage.Resources>
         <ResourceDictionary>
             <converters:ValueToPercentConverter x:Key="ValueToPercent" />
+            <converters:PercentToValueConverter x:Key="PercentToValue" />
         </ResourceDictionary>
     </ContentPage.Resources>
 

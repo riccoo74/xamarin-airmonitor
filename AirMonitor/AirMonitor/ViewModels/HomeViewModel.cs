@@ -18,7 +18,7 @@ namespace AirMonitor.ViewModels
     public class HomeViewModel : BaseViewModel
     {
         private readonly INavigation _navigation;
-        public HttpClient httpClient { get; private set; }
+        public HttpClient Client { get; private set; }
         public double Latitude { get; private set; }
         public double Longitude { get; private set; }
 
@@ -33,6 +33,7 @@ namespace AirMonitor.ViewModels
         {
             IsBusy = true;
 
+            InitializeHttpClient();
             IEnumerable<Measurement> measurements = await GetMeasurements();
             Items = new List<Measurement>(measurements);
 
@@ -67,8 +68,8 @@ namespace AirMonitor.ViewModels
         {
             await UpdateLocalization();
 
-            Uri uri = new Uri($"{App.AirlyApiUrl}/v2/installations/nearest?lat={Latitude}&lng={Longitude}&maxDistanceKM=10&maxResults=3");
-            HttpResponseMessage response = await httpClient.GetAsync(uri);
+            Uri uri = new Uri($"{App.AirlyApiUrl}/v2/installations/nearest?lat={Latitude}&lng={Longitude}&maxDistanceKM=10&maxResults=5");
+            HttpResponseMessage response = await Client.GetAsync(uri);
 
             List<Installation> installations = new List<Installation>();
 
@@ -90,12 +91,14 @@ namespace AirMonitor.ViewModels
             foreach (Installation installation in installations)
             {
                 Uri uri = new Uri($"{App.AirlyApiUrl}/v2/measurements/installation?installationId={installation.Id}");
-                HttpResponseMessage response = await httpClient.GetAsync(uri);
+                HttpResponseMessage response = await Client.GetAsync(uri);
 
                 if (response.IsSuccessStatusCode)
                 {
                     string body = await response.Content.ReadAsStringAsync();
+
                     Measurement measurement = JsonConvert.DeserializeObject<Measurement>(body);
+                    measurement.CurrentDisplayValue = (int)Math.Round(measurement.Current?.Indexes?.FirstOrDefault()?.Value ?? 0);
                     measurement.Installation = installation;
 
                     measurements.Add(measurement);
@@ -107,18 +110,20 @@ namespace AirMonitor.ViewModels
 
         private void InitializeHttpClient()
         {
-            HttpClient client = new HttpClient();
-            client.BaseAddress = new Uri(App.AirlyApiUrl);
+            HttpClient client = new HttpClient
+            {
+                BaseAddress = new Uri(App.AirlyApiUrl)
+            };
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip");
             client.DefaultRequestHeaders.Add("apikey", App.AirlyApiKey);
-            httpClient = client;
+            Client = client;
         }
 
         public async Task UpdateLocalization()
         {
-            var location = await Geolocation.GetLastKnownLocationAsync();
+            var location = await Geolocation.GetLocationAsync();
             Latitude = location.Latitude;
             Longitude = location.Longitude;
         }
