@@ -8,7 +8,7 @@ namespace AirMonitor.Views
 {
     public partial class HomePage : ContentPage
     {
-        private HomeViewModel viewModel => BindingContext as HomeViewModel;
+        private HomeViewModel _viewModel => BindingContext as HomeViewModel;
 
         public HomePage()
         {
@@ -19,7 +19,7 @@ namespace AirMonitor.Views
 
         void ListView_ItemTapped(System.Object sender, Xamarin.Forms.ItemTappedEventArgs e)
         {
-            viewModel.GoToDetailsCommand.Execute(e.Item as Measurement);
+            _viewModel.GoToDetailsCommand.Execute(e.Item as Measurement);
         }
     }
 }

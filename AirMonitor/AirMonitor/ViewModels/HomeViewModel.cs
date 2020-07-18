@@ -18,9 +18,6 @@ namespace AirMonitor.ViewModels
     public class HomeViewModel : BaseViewModel
     {
         private readonly INavigation _navigation;
-        public HttpClient Client { get; private set; }
-        public double Latitude { get; private set; }
-        public double Longitude { get; private set; }
 
         public HomeViewModel(INavigation navigation)
         {
@@ -33,9 +30,10 @@ namespace AirMonitor.ViewModels
         {
             IsBusy = true;
 
-            InitializeHttpClient();
-            IEnumerable<Measurement> measurements = await GetMeasurements();
-            Items = new List<Measurement>(measurements);
+            var location = await GetLocation();
+            var installations = await GetInstallations(location, maxResults: 3);
+            var data = await GetMeasurementsForInstallations(installations);
+            Items = new List<Measurement>(data);
 
             IsBusy = false;
         }
@@ -49,7 +47,6 @@ namespace AirMonitor.ViewModels
         }
 
         private List<Measurement> _items;
-
         public List<Measurement> Items
         {
             get => _items;
@@ -57,75 +54,189 @@ namespace AirMonitor.ViewModels
         }
 
         private bool _isBusy;
-
         public bool IsBusy
         {
             get => _isBusy;
             set => SetProperty(ref _isBusy, value);
         }
 
-        public async Task<IEnumerable<Installation>> GetCloseInstallations()
+        private async Task<IEnumerable<Installation>> GetInstallations(Location location, double maxDistanceInKm = 3, int maxResults = -1)
         {
-            await UpdateLocalization();
-
-            Uri uri = new Uri($"{App.AirlyApiUrl}/v2/installations/nearest?lat={Latitude}&lng={Longitude}&maxDistanceKM=10&maxResults=5");
-            HttpResponseMessage response = await Client.GetAsync(uri);
-
-            List<Installation> installations = new List<Installation>();
-
-            if (response.IsSuccessStatusCode)
+            if (location == null)
             {
-                string body = await response.Content.ReadAsStringAsync();
-
-                installations = JsonConvert.DeserializeObject<List<Installation>>(body);
+                System.Diagnostics.Debug.WriteLine("No location data.");
+                return null;
             }
 
-            return installations;
+            var query = GetQuery(new Dictionary<string, object>
+            {
+                { "lat", location.Latitude },
+                { "lng", location.Longitude },
+                { "maxDistanceKM", maxDistanceInKm },
+                { "maxResults", maxResults }
+            });
+            var url = GetAirlyApiUrl(App.AirlyApiInstallationUrl, query);
+            
+            var response = await GetHttpResponseAsync<IEnumerable<Installation>>(url);
+            return response;
         }
 
-        public async Task<IEnumerable<Measurement>> GetMeasurements()
+        private async Task<IEnumerable<Measurement>> GetMeasurementsForInstallations(IEnumerable<Installation> installations)
         {
-            List<Measurement> measurements = new List<Measurement>();
-            IEnumerable<Installation> installations = await GetCloseInstallations();
-
-            foreach (Installation installation in installations)
+            if (installations == null)
             {
-                Uri uri = new Uri($"{App.AirlyApiUrl}/v2/measurements/installation?installationId={installation.Id}");
-                HttpResponseMessage response = await Client.GetAsync(uri);
+                System.Diagnostics.Debug.WriteLine("No installations data.");
+                return null;
+            }
 
-                if (response.IsSuccessStatusCode)
+            var measurements = new List<Measurement>();
+
+            foreach (var installation in installations)
+            {
+                var query = GetQuery(new Dictionary<string, object>
                 {
-                    string body = await response.Content.ReadAsStringAsync();
+                    { "installationId", installation.Id }
+                });
+                var url = GetAirlyApiUrl(App.AirlyApiMeasurementUrl, query);
 
-                    Measurement measurement = JsonConvert.DeserializeObject<Measurement>(body);
-                    measurement.CurrentDisplayValue = (int)Math.Round(measurement.Current?.Indexes?.FirstOrDefault()?.Value ?? 0);
-                    measurement.Installation = installation;
+                var response = await GetHttpResponseAsync<Measurement>(url);
 
-                    measurements.Add(measurement);
+                if (response != null)
+                {
+                    response.Installation = installation;
+                    response.CurrentDisplayValue = (int)Math.Round(response.Current?.Indexes?.FirstOrDefault()?.Value ?? 0);
+                    measurements.Add(response);
                 }
             }
 
             return measurements;
         }
 
-        private void InitializeHttpClient()
+        private string GetQuery(IDictionary<string, object> args)
         {
-            HttpClient client = new HttpClient
+            if (args == null) return null;
+
+            var query = HttpUtility.ParseQueryString(string.Empty);
+
+            foreach (var arg in args)
             {
-                BaseAddress = new Uri(App.AirlyApiUrl)
-            };
-            client.DefaultRequestHeaders.Clear();
+                if (arg.Value is double number)
+                {
+                    query[arg.Key] = number.ToString(CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    query[arg.Key] = arg.Value?.ToString();
+                }
+            }
+
+            return query.ToString();
+        }
+
+        private string GetAirlyApiUrl(string path, string query)
+        {
+            var builder = new UriBuilder(App.AirlyApiUrl);
+            builder.Port = -1;
+            builder.Path += path;
+            builder.Query = query;
+            string url = builder.ToString();
+
+            return url;
+        }
+
+        private static HttpClient GetHttpClient()
+        {
+            var client = new HttpClient();
+            client.BaseAddress = new Uri(App.AirlyApiUrl);
+
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.DefaultRequestHeaders.Add("Accept-Encoding", "gzip");
             client.DefaultRequestHeaders.Add("apikey", App.AirlyApiKey);
-            Client = client;
+            return client;
         }
 
-        public async Task UpdateLocalization()
+        private async Task<T> GetHttpResponseAsync<T>(string url)
         {
-            var location = await Geolocation.GetLocationAsync();
-            Latitude = location.Latitude;
-            Longitude = location.Longitude;
+            try
+            {
+                var client = GetHttpClient();
+                var response = await client.GetAsync(url);
+
+                if (response.Headers.TryGetValues("X-RateLimit-Limit-day", out var dayLimit) &&
+                    response.Headers.TryGetValues("X-RateLimit-Remaining-day", out var dayLimitRemaining))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Day limit: {dayLimit?.FirstOrDefault()}, remaining: {dayLimitRemaining?.FirstOrDefault()}");
+                }
+
+                switch ((int)response.StatusCode)
+                {
+                    case 200:
+                        var content = await response.Content.ReadAsStringAsync();
+                        var result = JsonConvert.DeserializeObject<T>(content);
+                        return result;
+                    case 429: // too many requests
+                        System.Diagnostics.Debug.WriteLine("Too many requests");
+                        break;
+                    default:
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        System.Diagnostics.Debug.WriteLine($"Response error: {errorContent}");
+                        return default;
+                }
+            }
+            catch (JsonReaderException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            catch (WebException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+
+            return default;
+        }
+
+        private async Task<Location> GetLocation()
+        {
+            try
+            {
+                Location location = await Geolocation.GetLastKnownLocationAsync();
+
+                if (location == null)
+                {
+                    var request = new GeolocationRequest(GeolocationAccuracy.Medium);
+                    location = await Geolocation.GetLocationAsync(request);
+                }
+
+                if (location != null)
+                {
+                    Console.WriteLine($"Latitude: {location.Latitude}, Longitude: {location.Longitude}");
+                }
+
+                return location;
+            }
+            // Handle different exceptions separately, for example to display different messages to the user
+            catch (FeatureNotSupportedException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            catch (FeatureNotEnabledException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            catch (PermissionException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+
+            return null;
         }
     }
 }

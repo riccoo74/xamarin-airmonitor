@@ -13,6 +13,8 @@ namespace AirMonitor
     {
         public static string AirlyApiKey { get; private set; }
         public static string AirlyApiUrl { get; private set; }
+        public static string AirlyApiMeasurementUrl { get; private set; }
+        public static string AirlyApiInstallationUrl { get; private set; }
 
         public App()
         {
@@ -33,7 +35,7 @@ namespace AirMonitor
             var assembly = Assembly.GetAssembly(typeof(App));
             var resourceNames = assembly.GetManifestResourceNames();
             var configName = resourceNames.FirstOrDefault(s => s.Contains("config.json"));
-
+            
             using (var stream = assembly.GetManifestResourceStream(configName))
             {
                 using (var reader = new StreamReader(stream))
@@ -43,6 +45,8 @@ namespace AirMonitor
 
                     AirlyApiKey = dynamicJson["AirlyApiKey"].Value<string>();
                     AirlyApiUrl = dynamicJson["AirlyApiUrl"].Value<string>();
+                    AirlyApiMeasurementUrl = dynamicJson["AirlyApiMeasurementUrl"].Value<string>();
+                    AirlyApiInstallationUrl = dynamicJson["AirlyApiInstallationUrl"].Value<string>();
                 }
             }
         }

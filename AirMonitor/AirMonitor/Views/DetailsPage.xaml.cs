@@ -19,8 +19,8 @@ namespace AirMonitor.Views
         {
             InitializeComponent();
 
-            DetailsViewModel viewModel = BindingContext as DetailsViewModel;
-            viewModel.Item = item;
+            var vm = BindingContext as DetailsViewModel;
+            vm.Item = item;
         }
 
         private void Help_Clicked(object sender, EventArgs e)

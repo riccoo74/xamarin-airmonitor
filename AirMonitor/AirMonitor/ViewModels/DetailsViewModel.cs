@@ -12,7 +12,6 @@ namespace AirMonitor.ViewModels
         }
 
         private Measurement _item;
-
         public Measurement Item
         {
             get => _item;
@@ -26,6 +25,7 @@ namespace AirMonitor.ViewModels
 
         private void UpdateProperties()
         {
+            if (Item?.Current == null) return;
             var current = Item?.Current;
             var index = current.Indexes?.FirstOrDefault(c => c.Name == "AIRLY_CAQI");
             var values = current.Values;
@@ -43,15 +43,22 @@ namespace AirMonitor.ViewModels
         }
 
         private int _caqiValue = 57;
-
         public int CaqiValue
         {
             get => _caqiValue;
             set => SetProperty(ref _caqiValue, value);
+            /* SetProperty is a helper function to shorten our code. This is equivalent of:
+             * set
+             * {
+             *  if (_caqiValue == value) return; // Don't reassign value and notify view if value didn't change
+             *
+             *  _caqiValue = value;
+             *  RaisePropertyChanged();
+             * }
+             */
         }
 
         private string _caqiTitle = "Świetna jakość!";
-
         public string CaqiTitle
         {
             get => _caqiTitle;
@@ -59,7 +66,6 @@ namespace AirMonitor.ViewModels
         }
 
         private string _caqiDescription = "Możesz bezpiecznie wyjść z domu bez swojej maski anty-smogowej i nie bać się o swoje zdrowie.";
-
         public string CaqiDescription
         {
             get => _caqiDescription;
@@ -67,7 +73,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _pm25Value = 34;
-
         public int Pm25Value
         {
             get => _pm25Value;
@@ -75,7 +80,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _pm25Percent = 137;
-
         public int Pm25Percent
         {
             get => _pm25Percent;
@@ -83,7 +87,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _pm10Value = 67;
-
         public int Pm10Value
         {
             get => _pm10Value;
@@ -91,7 +94,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _pm10Percent = 135;
-
         public int Pm10Percent
         {
             get => _pm10Percent;
@@ -99,7 +101,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _humidityPercent = 29;
-
         public int HumidityPercent
         {
             get => _humidityPercent;
@@ -107,7 +108,6 @@ namespace AirMonitor.ViewModels
         }
 
         private int _pressureValue = 1027;
-
         public int PressureValue
         {
             get => _pressureValue;
