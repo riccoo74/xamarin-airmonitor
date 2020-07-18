@@ -4,9 +4,7 @@
              x:Class="AirMonitor.Views.Controls.ContentWithHeader"
              x:Name="RootView">
     <Label
-        Text="{Binding Path=Title, Source={x:Reference RootView}}"
-        FontSize="14"
-        TextColor="Black" />
+        Text="{Binding Path=Title, Source={x:Reference RootView}}" />
     <ContentView
-        Content="{Binding Path=ControlContent, Source={x:Reference RootView}}"/>
+        Content="{Binding Path=ControlContent, Source={x:Reference RootView}}" />
 </StackLayout>
