@@ -10,6 +10,8 @@ namespace AirMonitor.Views
         public HomePage()
         {
             InitializeComponent();
+
+            BindingContext = new HomeViewModel(Navigation);
         }
     }
 }

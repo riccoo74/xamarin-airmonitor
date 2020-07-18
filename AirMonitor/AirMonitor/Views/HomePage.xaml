@@ -7,5 +7,6 @@
         Text="Go to details"
         HorizontalOptions="Center"
         VerticalOptions="Center"
+        Command="{Binding GoToDetailsCommand}"
         />
 </ContentPage>

@@ -9,7 +9,7 @@
              xmlns:viewModels="clr-namespace:AirMonitor.ViewModels"
              xmlns:converters="clr-namespace:AirMonitor.Converters"
              Title="Details Page"
-             Style="{StaticResource DetailsPageStackLayoutStyle}">
+             Style="{StaticResource DetailsPageStyle}">
     <ContentPage.BindingContext>
         <viewModels:DetailsViewModel />
     </ContentPage.BindingContext>
