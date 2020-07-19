@@ -26,16 +26,25 @@ namespace AirMonitor.ViewModels
             Initialize();
         }
 
-        private async Task Initialize()
+        private async Task Initialize(bool forceRefresh = false)
         {
             IsBusy = true;
 
-            var location = await GetLocation();
-            var installations = await GetInstallations(location, maxResults: 3);
-            var data = await GetMeasurementsForInstallations(installations);
-            Items = new List<Measurement>(data);
+            await LoadData(forceRefresh);
 
             IsBusy = false;
+        }
+
+        private async Task LoadData(bool forceRefresh)
+        {
+            var location = await GetLocation();
+            var data = await Task.Run(async () =>
+            {
+                var installations = await GetInstallations(location, forceRefresh, maxResults: 5);
+                return await GetMeasurementsForInstallations(installations, forceRefresh);
+            });
+
+            Items = new List<Measurement>(data);
         }
 
         private ICommand _goToDetailsCommand;
@@ -46,7 +55,20 @@ namespace AirMonitor.ViewModels
             _navigation.PushAsync(new DetailsPage(item));
         }
 
+        private ICommand _refreshCommand;
+        public ICommand RefreshCommand => _refreshCommand ?? (_refreshCommand = new Command(async () => await OnRefreshCommand()));
+
+        private async Task OnRefreshCommand()
+        {
+            IsRefreshing = true;
+
+            await LoadData(true);
+
+            IsRefreshing = false;
+        }
+
         private List<Measurement> _items;
+
         public List<Measurement> Items
         {
             get => _items;
@@ -54,13 +76,22 @@ namespace AirMonitor.ViewModels
         }
 
         private bool _isBusy;
+
         public bool IsBusy
         {
             get => _isBusy;
             set => SetProperty(ref _isBusy, value);
         }
 
-        private async Task<IEnumerable<Installation>> GetInstallations(Location location, double maxDistanceInKm = 3, int maxResults = -1)
+        private bool _isRefreshing;
+
+        public bool IsRefreshing
+        {
+            get => _isRefreshing;
+            set => SetProperty(ref _isRefreshing, value);
+        }
+
+        private async Task<IEnumerable<Installation>> GetInstallations(Location location, bool forceRefresh, double maxDistanceInKm = 3, int maxResults = -1)
         {
             if (location == null)
             {
@@ -68,20 +99,34 @@ namespace AirMonitor.ViewModels
                 return null;
             }
 
-            var query = GetQuery(new Dictionary<string, object>
+            IEnumerable<Installation> result;
+
+            var savedMeasurements = App.DbHelper.GetMeasurements();
+
+            if (forceRefresh || ShouldUpdateData(savedMeasurements))
             {
-                { "lat", location.Latitude },
-                { "lng", location.Longitude },
-                { "maxDistanceKM", maxDistanceInKm },
-                { "maxResults", maxResults }
-            });
-            var url = GetAirlyApiUrl(App.AirlyApiInstallationUrl, query);
-            
-            var response = await GetHttpResponseAsync<IEnumerable<Installation>>(url);
-            return response;
+                var query = GetQuery(new Dictionary<string, object>
+                {
+                    { "lat", location.Latitude },
+                    { "lng", location.Longitude },
+                    { "maxDistanceKM", maxDistanceInKm },
+                    { "maxResults", maxResults }
+                });
+                var url = GetAirlyApiUrl(App.AirlyApiInstallationUrl, query);
+
+                result = await GetHttpResponseAsync<IEnumerable<Installation>>(url);
+
+                App.DbHelper.SaveInstallations(result);
+            }
+            else
+            {
+                result = App.DbHelper.GetInstallations();
+            }
+
+            return result;
         }
 
-        private async Task<IEnumerable<Measurement>> GetMeasurementsForInstallations(IEnumerable<Installation> installations)
+        private async Task<IEnumerable<Measurement>> GetMeasurementsForInstallations(IEnumerable<Installation> installations, bool forceRefresh)
         {
             if (installations == null)
             {
@@ -90,26 +135,47 @@ namespace AirMonitor.ViewModels
             }
 
             var measurements = new List<Measurement>();
+            var savedMeasurements = App.DbHelper.GetMeasurements();
 
-            foreach (var installation in installations)
+            if (forceRefresh || ShouldUpdateData(savedMeasurements))
             {
-                var query = GetQuery(new Dictionary<string, object>
+                foreach (var installation in installations)
                 {
-                    { "installationId", installation.Id }
-                });
-                var url = GetAirlyApiUrl(App.AirlyApiMeasurementUrl, query);
+                    var query = GetQuery(new Dictionary<string, object>
+                    {
+                        { "installationId", installation.Id }
+                    });
+                    var url = GetAirlyApiUrl(App.AirlyApiMeasurementUrl, query);
 
-                var response = await GetHttpResponseAsync<Measurement>(url);
+                    var response = await GetHttpResponseAsync<Measurement>(url);
 
-                if (response != null)
-                {
-                    response.Installation = installation;
-                    response.CurrentDisplayValue = (int)Math.Round(response.Current?.Indexes?.FirstOrDefault()?.Value ?? 0);
-                    measurements.Add(response);
+                    if (response != null)
+                    {
+                        response.Installation = installation;
+                        measurements.Add(response);
+                    }
                 }
+
+                App.DbHelper.SaveMeasurements(measurements);
+            }
+            else
+            {
+                measurements = savedMeasurements.ToList();
+            }
+
+            foreach (var measurement in measurements)
+            {
+                measurement.CurrentDisplayValue = (int)Math.Round(measurement.Current?.Indexes?.FirstOrDefault()?.Value ?? 0);
             }
 
             return measurements;
+        }
+
+        private bool ShouldUpdateData(IEnumerable<Measurement> savedMeasurements)
+        {
+            var isAnyMeasurementOld = savedMeasurements.Any(s => s.Current.TillDateTime.AddMinutes(60) < DateTime.UtcNow);
+
+            return savedMeasurements.Count() == 0 || isAnyMeasurementOld;
         }
 
         private string GetQuery(IDictionary<string, object> args)
@@ -162,21 +228,17 @@ namespace AirMonitor.ViewModels
                 var client = GetHttpClient();
                 var response = await client.GetAsync(url);
 
-                if (response.Headers.TryGetValues("X-RateLimit-Limit-day", out var dayLimit) &&
-                    response.Headers.TryGetValues("X-RateLimit-Remaining-day", out var dayLimitRemaining))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Day limit: {dayLimit?.FirstOrDefault()}, remaining: {dayLimitRemaining?.FirstOrDefault()}");
-                }
-
                 switch ((int)response.StatusCode)
                 {
                     case 200:
                         var content = await response.Content.ReadAsStringAsync();
                         var result = JsonConvert.DeserializeObject<T>(content);
                         return result;
+
                     case 429: // too many requests
                         System.Diagnostics.Debug.WriteLine("Too many requests");
                         break;
+
                     default:
                         var errorContent = await response.Content.ReadAsStringAsync();
                         System.Diagnostics.Debug.WriteLine($"Response error: {errorContent}");
